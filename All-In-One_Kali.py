@@ -86,7 +86,8 @@ else:
 
 def bootstrap():
     required = ["rich", "psutil"]
-    missing  = [lib for lib in required if not __import__("importlib").util.find_spec(lib)]
+    import importlib.util
+    missing  = [lib for lib in required if not importlib.util.find_spec(lib)]
     if not missing:
         return
 
