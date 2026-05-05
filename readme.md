@@ -14,3 +14,8 @@ A powerful Python-based toolkit designed to clean, monitor, and optimize Windows
 - **Python** (Core Logic)
 - **WinAPI / ctypes** (Native System Control)
 - **Rich** (Premium Terminal UI)
+
+---
+
+### 📋 Changelog:
+**v4.0** — Added cross-platform support. REY STATION now auto-detects your OS (Windows, Kali, Arch, Fedora, macOS) and switches all commands and system calls accordingly.
