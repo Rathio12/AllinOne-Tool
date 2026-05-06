@@ -1,8 +1,5 @@
 """
-REY STATION  V4.0  ─  CROSS-PLATFORM EDITION
-═════════════════════════════════════════════
-Auto-detects OS and switches all commands, APIs, and platform logic.
-Supports: Windows · Kali/Debian · Arch · Fedora/RHEL · macOS
+REY STATION  V4.0
 Requires: pip install rich psutil
 """
 
@@ -19,60 +16,43 @@ import random
 from datetime import datetime
 from pathlib import Path
 
-# ═══════════════════════════════════════════════════════════════
-#  PLATFORM DETECTION  (runs before anything else)
-# ═══════════════════════════════════════════════════════════════
-
-_sys = platform.system()          # 'Windows' | 'Linux' | 'Darwin'
-_rel = platform.release().lower()
+_sys      = platform.system()
 _IS_WIN   = _sys == "Windows"
 _IS_MAC   = _sys == "Darwin"
 _IS_LINUX = _sys == "Linux"
 
-# Detect Linux distro family
-_DISTRO_ID   = ""
-_DISTRO_LIKE = ""
-_IS_KALI     = False
-_IS_ARCH     = False
-_IS_FEDORA   = False
-_IS_DEBIAN   = False
+_DISTRO   = ""
+_IS_UBUNTU = False
+_IS_ARCH   = False
+_IS_FEDORA = False
 
 if _IS_LINUX:
     try:
         with open("/etc/os-release") as fh:
-            _osr = dict(
-                line.strip().split("=", 1)
-                for line in fh
-                if "=" in line
-            )
-        _DISTRO_ID   = _osr.get("ID",         "").strip('"').lower()
-        _DISTRO_LIKE = _osr.get("ID_LIKE",    "").strip('"').lower()
-        _DISTRO_NAME = _osr.get("PRETTY_NAME","").strip('"')
-        _IS_KALI   = "kali"   in _DISTRO_ID or "kali"   in _DISTRO_LIKE
-        _IS_ARCH   = "arch"   in _DISTRO_ID or "arch"   in _DISTRO_LIKE
-        _IS_FEDORA = "fedora" in _DISTRO_ID or "rhel"   in _DISTRO_LIKE or "centos" in _DISTRO_LIKE
-        _IS_DEBIAN = "debian" in _DISTRO_ID or "debian" in _DISTRO_LIKE or _IS_KALI
+            _osr = dict(line.strip().split("=", 1) for line in fh if "=" in line)
+        _id   = _osr.get("ID",      "").strip('"').lower()
+        _like = _osr.get("ID_LIKE", "").strip('"').lower()
+        _DISTRO_NAME = _osr.get("PRETTY_NAME", "Linux").strip('"')
+        _IS_UBUNTU = any(x in _id + _like for x in ("ubuntu", "debian", "kali", "mint", "pop"))
+        _IS_ARCH   = any(x in _id + _like for x in ("arch", "manjaro", "endeavour"))
+        _IS_FEDORA = any(x in _id + _like for x in ("fedora", "rhel", "centos", "rocky", "alma"))
     except Exception:
-        _DISTRO_NAME = "Unknown Linux"
+        _DISTRO_NAME = "Linux"
 else:
     _DISTRO_NAME = _sys
 
-# ─── OS summary tag for UI ──────────────────────────────────────
 if _IS_WIN:
     _OS_TAG   = "WINDOWS"
     _OS_COLOR = "#00aaff"
-elif _IS_KALI:
-    _OS_TAG   = "KALI LINUX"
-    _OS_COLOR = "#3399ff"
+elif _IS_UBUNTU:
+    _OS_TAG   = "UBUNTU/DEBIAN"
+    _OS_COLOR = "#cc44ff"
 elif _IS_ARCH:
     _OS_TAG   = "ARCH LINUX"
     _OS_COLOR = "#00bfff"
 elif _IS_FEDORA:
     _OS_TAG   = "FEDORA/RHEL"
     _OS_COLOR = "#4488ff"
-elif _IS_DEBIAN:
-    _OS_TAG   = "DEBIAN LINUX"
-    _OS_COLOR = "#cc44ff"
 elif _IS_MAC:
     _OS_TAG   = "macOS"
     _OS_COLOR = "#aaaaff"
@@ -80,17 +60,13 @@ else:
     _OS_TAG   = "LINUX"
     _OS_COLOR = "#44ffaa"
 
-# ═══════════════════════════════════════════════════════════════
-#  BOOTSTRAP: AUTO-INSTALL DEPENDENCIES
-# ═══════════════════════════════════════════════════════════════
 
 def bootstrap():
     required = ["rich", "psutil"]
     import importlib.util
-    missing  = [lib for lib in required if not importlib.util.find_spec(lib)]
+    missing = [lib for lib in required if not importlib.util.find_spec(lib)]
     if not missing:
         return
-
     print(f"--- REY STATION: Missing: {', '.join(missing)} ---")
     print("--- Attempting automatic installation... ---")
     pip_base = [sys.executable, "-m", "pip", "install"]
@@ -102,8 +78,7 @@ def bootstrap():
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
         print(f"--- pip failed: {e} ---")
-        # Offer distro package manager fallback on Linux
-        if _IS_DEBIAN or _IS_KALI:
+        if _IS_UBUNTU:
             print("--- Try: sudo apt install python3-rich python3-psutil ---")
         elif _IS_ARCH:
             print("--- Try: sudo pacman -S python-rich python-psutil ---")
@@ -112,10 +87,6 @@ def bootstrap():
         sys.exit(1)
 
 bootstrap()
-
-# ═══════════════════════════════════════════════════════════════
-#  IMPORTS (after bootstrap ensures deps exist)
-# ═══════════════════════════════════════════════════════════════
 
 import psutil
 PSUTIL = True
@@ -131,15 +102,9 @@ from rich.table    import Table
 from rich.text     import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-# ═══════════════════════════════════════════════════════════════
-#  PLATFORM ABSTRACTION LAYER
-#  All OS-specific logic lives here. Modules call PlatformAPI.*
-# ═══════════════════════════════════════════════════════════════
 
 class PlatformAPI:
-    """Single place for every OS-divergent operation."""
 
-    # ── Privilege detection ─────────────────────────────────────
     @staticmethod
     def is_admin() -> bool:
         if _IS_WIN:
@@ -151,24 +116,19 @@ class PlatformAPI:
         else:
             return os.geteuid() == 0
 
-    # ── Screen clear ────────────────────────────────────────────
     @staticmethod
     def clear():
         os.system("cls" if _IS_WIN else "clear")
 
-    # ── RAM / cache operations ──────────────────────────────────
     @staticmethod
     def trim_working_sets() -> int:
-        """Trim process memory. Returns count of affected processes."""
         if _IS_WIN:
             try:
                 import ctypes, ctypes.wintypes
                 count = 0
                 for pid in psutil.pids():
                     try:
-                        handle = ctypes.windll.kernel32.OpenProcess(
-                            0x0400 | 0x0100, False, pid
-                        )
+                        handle = ctypes.windll.kernel32.OpenProcess(0x0400 | 0x0100, False, pid)
                         if handle:
                             ctypes.windll.psapi.EmptyWorkingSet(handle)
                             ctypes.windll.kernel32.CloseHandle(handle)
@@ -179,7 +139,6 @@ class PlatformAPI:
             except Exception:
                 return 0
         elif _IS_LINUX:
-            # Drop caches requires root; attempt echo 3 > /proc/sys/vm/drop_caches
             if PlatformAPI.is_admin():
                 try:
                     with open("/proc/sys/vm/drop_caches", "w") as f:
@@ -187,10 +146,8 @@ class PlatformAPI:
                     return len(psutil.pids())
                 except Exception:
                     return 0
-            else:
-                return 0
+            return 0
         elif _IS_MAC:
-            # macOS: purge command (requires sudo)
             rc = subprocess.run(["purge"], capture_output=True).returncode
             return len(psutil.pids()) if rc == 0 else 0
         return 0
@@ -201,13 +158,10 @@ class PlatformAPI:
             try:
                 import ctypes
                 cmd = ctypes.c_int(4)
-                return ctypes.windll.ntdll.NtSetSystemInformation(
-                    80, ctypes.byref(cmd), 4
-                ) == 0
+                return ctypes.windll.ntdll.NtSetSystemInformation(80, ctypes.byref(cmd), 4) == 0
             except Exception:
                 return False
         elif _IS_LINUX:
-            # sync + drop_caches achieves a similar effect
             try:
                 subprocess.run(["sync"], check=True)
                 with open("/proc/sys/vm/drop_caches", "w") as f:
@@ -226,34 +180,19 @@ class PlatformAPI:
             except Exception:
                 return False
         elif _IS_LINUX:
-            # systemd-resolved
-            r = subprocess.run(
-                ["resolvectl", "flush-caches"],
-                capture_output=True
-            )
+            r = subprocess.run(["resolvectl", "flush-caches"], capture_output=True)
             if r.returncode == 0:
                 return True
-            # nscd fallback
-            r2 = subprocess.run(
-                ["nscd", "-i", "hosts"],
-                capture_output=True
-            )
+            r2 = subprocess.run(["nscd", "-i", "hosts"], capture_output=True)
             return r2.returncode == 0
         elif _IS_MAC:
-            r = subprocess.run(
-                ["dscacheutil", "-flushcache"],
-                capture_output=True
-            )
-            subprocess.run(
-                ["killall", "-HUP", "mDNSResponder"],
-                capture_output=True
-            )
+            r = subprocess.run(["dscacheutil", "-flushcache"], capture_output=True)
+            subprocess.run(["killall", "-HUP", "mDNSResponder"], capture_output=True)
             return r.returncode == 0
         return False
 
     @staticmethod
     def clear_file_cache() -> tuple:
-        """Returns (success:bool, message:str)"""
         if _IS_WIN:
             try:
                 subprocess.run(
@@ -278,14 +217,12 @@ class PlatformAPI:
             return r.returncode == 0, "macOS purge executed"
         return False, "Not supported on this platform"
 
-    # ── Lock / suspend / power ──────────────────────────────────
     @staticmethod
     def lock_screen():
         if _IS_WIN:
             import ctypes
             ctypes.windll.user32.LockWorkStation()
         elif _IS_LINUX:
-            # Try common lockers in order
             for cmd in [
                 ["loginctl", "lock-session"],
                 ["xdg-screensaver", "lock"],
@@ -336,15 +273,12 @@ class PlatformAPI:
         elif _IS_LINUX or _IS_MAC:
             subprocess.run(["shutdown", "-r", f"+{delay_secs // 60 or 1}"])
 
-    # ── Recycle bin / trash ─────────────────────────────────────
     @staticmethod
     def empty_trash() -> bool:
         if _IS_WIN:
             try:
                 import ctypes
-                return ctypes.windll.shell32.SHEmptyRecycleBinW(
-                    None, None, 1 | 2 | 4
-                ) == 0
+                return ctypes.windll.shell32.SHEmptyRecycleBinW(None, None, 1 | 2 | 4) == 0
             except Exception:
                 return False
         elif _IS_LINUX:
@@ -383,17 +317,14 @@ class PlatformAPI:
             return ok
         return False
 
-    # ── Disk utilities ──────────────────────────────────────────
     @staticmethod
     def optimize_drives(capture=False):
-        """Returns (cmd_list, use_shell)"""
         if _IS_WIN:
             return ["defrag", "/C", "/O"], False
         elif _IS_LINUX:
-            # e4defrag for ext4; fstrim for SSDs
             return ["fstrim", "-av"], False
         elif _IS_MAC:
-            return None, False  # macOS handles defrag automatically
+            return None, False
 
     @staticmethod
     def disk_health_cmd():
@@ -409,7 +340,6 @@ class PlatformAPI:
 
     @staticmethod
     def file_system_check():
-        """Returns command to check filesystem integrity."""
         if _IS_WIN:
             return "sfc /scannow", True
         elif _IS_LINUX:
@@ -428,7 +358,6 @@ class PlatformAPI:
             return "diskutil repairVolume /", True
         return None, False
 
-    # ── Network ─────────────────────────────────────────────────
     @staticmethod
     def ping_cmd(host: str) -> list:
         if _IS_WIN:
@@ -450,32 +379,26 @@ class PlatformAPI:
 
     @staticmethod
     def network_reset_cmds() -> list:
-        """Returns list of (label, cmd_list_or_str, shell) tuples."""
         if _IS_WIN:
             return [
-                ("winsock reset",   ["netsh", "winsock", "reset"], False),
-                ("ip reset",        ["netsh", "int", "ip", "reset"], False),
-                ("release ip",      ["ipconfig", "/release"], False),
-                ("flush dns",       ["ipconfig", "/flushdns"], False),
+                ("winsock reset", ["netsh", "winsock", "reset"], False),
+                ("ip reset",      ["netsh", "int", "ip", "reset"], False),
+                ("release ip",    ["ipconfig", "/release"], False),
+                ("flush dns",     ["ipconfig", "/flushdns"], False),
             ]
         elif _IS_LINUX:
             cmds = []
             if shutil.which("systemctl"):
-                cmds.append(("restart NetworkManager",
-                              ["systemctl", "restart", "NetworkManager"], False))
+                cmds.append(("restart NetworkManager", ["systemctl", "restart", "NetworkManager"], False))
             if shutil.which("ip"):
-                cmds.append(("flush ip cache",
-                              "ip route flush cache", True))
+                cmds.append(("flush ip cache", "ip route flush cache", True))
             if shutil.which("resolvectl"):
-                cmds.append(("flush dns",
-                              ["resolvectl", "flush-caches"], False))
+                cmds.append(("flush dns", ["resolvectl", "flush-caches"], False))
             return cmds
         elif _IS_MAC:
             return [
-                ("flush dns",
-                 ["dscacheutil", "-flushcache"], False),
-                ("restart mDNSResponder",
-                 ["killall", "-HUP", "mDNSResponder"], False),
+                ("flush dns",           ["dscacheutil", "-flushcache"], False),
+                ("restart mDNSResponder", ["killall", "-HUP", "mDNSResponder"], False),
             ]
         return []
 
@@ -484,55 +407,49 @@ class PlatformAPI:
         if _IS_WIN:
             return ["ipconfig", "/all"]
         else:
-            cmds = []
             if shutil.which("ip"):
                 return ["ip", "addr", "show"]
             return ["ifconfig", "-a"]
 
-    # ── Junk / temp paths ───────────────────────────────────────
     @staticmethod
     def junk_targets() -> list:
-        """Returns list of (path_str, label) tuples."""
         if _IS_WIN:
             return [
-                (os.environ.get("TEMP", ""),                                                  "User Temp"),
-                (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Temp"),           "Windows Temp"),
-                (os.path.join(os.environ.get("LOCALAPPDATA", ""), "Temp"),                    "LocalAppData Temp"),
-                (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Prefetch"),       "Prefetch"),
-                (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
-                              r"SoftwareDistribution\Download"),                               "WU Downloads"),
+                (os.environ.get("TEMP", ""),                                                           "User Temp"),
+                (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Temp"),                   "Windows Temp"),
+                (os.path.join(os.environ.get("LOCALAPPDATA", ""), "Temp"),                            "LocalAppData Temp"),
+                (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Prefetch"),               "Prefetch"),
+                (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), r"SoftwareDistribution\Download"), "WU Downloads"),
             ]
         elif _IS_LINUX:
             home = str(Path.home())
             targets = [
-                ("/tmp",                               "Global /tmp"),
-                (f"{home}/.cache",                    "User Cache (~/.cache)"),
-                ("/var/tmp",                           "Var Tmp"),
-                ("/var/log",                           "System Logs"),
+                ("/tmp",           "Global /tmp"),
+                (f"{home}/.cache", "User Cache"),
+                ("/var/tmp",       "Var Tmp"),
+                ("/var/log",       "System Logs"),
             ]
-            if _IS_DEBIAN or _IS_KALI:
-                targets.append(("/var/cache/apt/archives", "APT Package Cache"))
+            if _IS_UBUNTU:
+                targets.append(("/var/cache/apt/archives", "APT Cache"))
             elif _IS_ARCH:
-                targets.append(("/var/cache/pacman/pkg",   "Pacman Package Cache"))
+                targets.append(("/var/cache/pacman/pkg", "Pacman Cache"))
             elif _IS_FEDORA:
-                targets.append(("/var/cache/dnf",          "DNF Cache"))
+                targets.append(("/var/cache/dnf", "DNF Cache"))
             return targets
         elif _IS_MAC:
             home = str(Path.home())
             return [
-                ("/private/tmp",             "System /tmp"),
-                (f"{home}/Library/Caches",  "User Library Caches"),
-                ("/Library/Caches",          "System Library Caches"),
-                ("/private/var/log",         "System Logs"),
+                ("/private/tmp",           "System /tmp"),
+                (f"{home}/Library/Caches", "User Library Caches"),
+                ("/Library/Caches",        "System Library Caches"),
+                ("/private/var/log",       "System Logs"),
             ]
         return [("/tmp", "Temp")]
 
-    # ── Package-manager cache clean ─────────────────────────────
     @staticmethod
     def clean_pkg_cache() -> tuple:
-        """Returns (ok:bool, msg:str)"""
-        if _IS_DEBIAN or _IS_KALI:
-            r = subprocess.run(["apt-get", "clean"], capture_output=True)
+        if _IS_UBUNTU:
+            r  = subprocess.run(["apt-get", "clean"], capture_output=True)
             r2 = subprocess.run(["apt-get", "autoremove", "-y"], capture_output=True)
             return r.returncode == 0, "apt-get clean + autoremove"
         elif _IS_ARCH:
@@ -550,7 +467,6 @@ class PlatformAPI:
             return False, "Homebrew not found"
         return False, "No supported package manager found"
 
-    # ── Disk cleanup launcher ───────────────────────────────────
     @staticmethod
     def launch_disk_cleanup():
         if _IS_WIN:
@@ -560,15 +476,13 @@ class PlatformAPI:
             if shutil.which("bleachbit"):
                 subprocess.Popen(["bleachbit"])
                 return True, "BleachBit launched"
-            return False, "BleachBit not found — install with: apt install bleachbit"
+            return False, "BleachBit not found — install with your package manager"
         elif _IS_MAC:
             return False, "Use macOS Storage Management (System Settings > General > Storage)"
         return False, "Not available"
 
-    # ── Power plans ─────────────────────────────────────────────
     @staticmethod
     def set_power_plan(plan: str) -> tuple:
-        """plan: 'performance' | 'balanced' | 'powersave'"""
         if _IS_WIN:
             guids = {
                 "performance": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
@@ -599,29 +513,19 @@ class PlatformAPI:
                         return False, "Root required to set CPU governor"
             if ok:
                 return True, f"CPU governor set to {gov} on {len(cpu_dirs)} cores"
-            # Fallback: cpupower
             if shutil.which("cpupower"):
-                r = subprocess.run(
-                    ["cpupower", "frequency-set", "-g", gov],
-                    capture_output=True
-                )
+                r = subprocess.run(["cpupower", "frequency-set", "-g", gov], capture_output=True)
                 return r.returncode == 0, f"cpupower governor set to {gov}"
             return False, "No CPU frequency scaling support found"
         elif _IS_MAC:
-            # macOS manages power automatically; only sleep delay is settable
             delay_map = {"performance": "0", "balanced": "10", "powersave": "5"}
             delay = delay_map.get(plan, "10")
-            r = subprocess.run(
-                ["pmset", "-a", "sleep", delay],
-                capture_output=True
-            )
+            r = subprocess.run(["pmset", "-a", "sleep", delay], capture_output=True)
             return r.returncode == 0, f"pmset sleep delay set to {delay} min"
         return False, "Not supported"
 
-    # ── Battery ─────────────────────────────────────────────────
     @staticmethod
     def battery_info() -> dict:
-        """Returns dict with keys: percent, plugged, secsleft, available"""
         if not PSUTIL:
             return {"available": False}
         b = psutil.sensors_battery()
@@ -634,7 +538,6 @@ class PlatformAPI:
             "secsleft":  b.secsleft if b.secsleft and b.secsleft > 0 else None,
         }
 
-    # ── System info ─────────────────────────────────────────────
     @staticmethod
     def get_uptime() -> str:
         if PSUTIL:
@@ -647,9 +550,7 @@ class PlatformAPI:
                 pass
         if _IS_LINUX or _IS_MAC:
             try:
-                out = subprocess.run(
-                    ["uptime", "-p"], capture_output=True, text=True
-                ).stdout.strip()
+                out = subprocess.run(["uptime", "-p"], capture_output=True, text=True).stdout.strip()
                 return out or "N/A"
             except Exception:
                 pass
@@ -657,16 +558,13 @@ class PlatformAPI:
 
     @staticmethod
     def get_extra_info() -> dict:
-        """Platform-specific extra fields for System Info panel."""
         info = {}
         if _IS_LINUX:
             info["Distro"] = _DISTRO_NAME
-            # Kernel
             try:
                 info["Kernel"] = platform.release()
             except Exception:
                 pass
-            # Package count
             pkg = _count_packages()
             if pkg:
                 info["Packages"] = pkg
@@ -674,10 +572,7 @@ class PlatformAPI:
             info["macOS"] = platform.mac_ver()[0]
             if shutil.which("brew"):
                 try:
-                    r = subprocess.run(
-                        ["brew", "list", "--formula"],
-                        capture_output=True, text=True
-                    )
+                    r = subprocess.run(["brew", "list", "--formula"], capture_output=True, text=True)
                     info["Brew pkgs"] = str(len(r.stdout.splitlines()))
                 except Exception:
                     pass
@@ -685,7 +580,6 @@ class PlatformAPI:
             info["Edition"] = platform.version()
         return info
 
-    # ── Notify ──────────────────────────────────────────────────
     @staticmethod
     def notify(msg: str):
         if _IS_WIN:
@@ -694,10 +588,7 @@ class PlatformAPI:
             except Exception:
                 pass
         elif _IS_LINUX:
-            for tool in [
-                ["notify-send", "REY STATION", msg],
-                ["wall", msg],
-            ]:
+            for tool in [["notify-send", "REY STATION", msg], ["wall", msg]]:
                 if shutil.which(tool[0]):
                     try:
                         subprocess.run(tool, capture_output=True, timeout=5)
@@ -707,8 +598,7 @@ class PlatformAPI:
         elif _IS_MAC:
             try:
                 subprocess.run(
-                    ["osascript", "-e",
-                     f'display notification "{msg}" with title "REY STATION"'],
+                    ["osascript", "-e", f'display notification "{msg}" with title "REY STATION"'],
                     capture_output=True, timeout=5
                 )
             except Exception:
@@ -716,8 +606,7 @@ class PlatformAPI:
 
 
 def _count_packages() -> str:
-    """Try to count installed packages on Linux."""
-    if _IS_DEBIAN or _IS_KALI:
+    if _IS_UBUNTU:
         try:
             r = subprocess.run(["dpkg", "-l"], capture_output=True, text=True)
             return str(len([l for l in r.stdout.splitlines() if l.startswith("ii")]))
@@ -738,10 +627,6 @@ def _count_packages() -> str:
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
-#  SHARED UTILITIES
-# ═══════════════════════════════════════════════════════════════
-
 console = Console()
 
 def clr():
@@ -755,10 +640,7 @@ def run_cmd(cmd, capture=True, shell=False):
     try:
         if shell and isinstance(cmd, list):
             cmd = " ".join(str(c) for c in cmd)
-        r = subprocess.run(
-            cmd, capture_output=capture, text=True,
-            timeout=120, shell=shell
-        )
+        r = subprocess.run(cmd, capture_output=capture, text=True, timeout=120, shell=shell)
         return r.stdout.strip(), r.returncode
     except subprocess.TimeoutExpired:
         return "Command timed out", 1
@@ -782,9 +664,6 @@ def run_power_action(action: str):
     elif action == "Sleep":       PlatformAPI.suspend()
     elif action == "Lock Screen": PlatformAPI.lock_screen()
 
-# ═══════════════════════════════════════════════════════════════
-#  VISUAL CONSTANTS
-# ═══════════════════════════════════════════════════════════════
 
 LOGO = (
     "  ██████╗ ██╗   ██╗    ██████╗ ███████╗██╗   ██╗  \n"
@@ -795,8 +674,9 @@ LOGO = (
     "  ╚═════╝    ╚═╝       ╚═╝  ╚═╝╚══════╝   ╚═╝      "
 )
 
-DISCO    = ["#00ffff","#ff00ff","#ffff00","#00ff88","#4488ff",
-            "#ff4444","#ffffff","#ff88ff","#88ffff","#ffaa00"]
+DISCO = ["#00ffff","#ff00ff","#ffff00","#00ff88","#4488ff",
+         "#ff4444","#ffffff","#ff88ff","#88ffff","#ffaa00"]
+
 SPECTRUM = [
     "▁  ▃  ▅  █  ▅  ▃  ▁  ▂  ▆  █  ▄  ▂  ▁  ▃  ▇  █  ▅  ▂  ▁  ▄  ▆  █  ▃  ▁",
     "▂  ▅  █  ▆  ▃  ▁  ▂  ▄  █  ▇  ▃  ▁  ▂  ▅  █  ▆  ▄  ▁  ▂  ▅  █  ▅  ▂  ▁",
@@ -807,33 +687,31 @@ SPECTRUM = [
     "█  ▂  ▁  ▃  █  ▇  ▄  ▁  ▂  ▄  █  ▅  ▂  ▁  ▃  ▆  █  ▄  ▁  ▂  ▅  █  ▆  ▃",
     "▇  ▁  ▂  ▅  █  ▅  ▂  ▁  ▃  █  ▆  ▃  ▁  ▂  ▄  █  ▇  ▂  ▁  ▃  █  ▅  ▄  ▁",
 ]
-VU_SEQ   = [0,1,3,5,7,9,11,10,8,6,4,2,0,2,5,8,11,11,9,6,3,0]
+
+VU_SEQ = [0,1,3,5,7,9,11,10,8,6,4,2,0,2,5,8,11,11,9,6,3,0]
 
 MODULES = {
-    "1": ("⏱  Timer & Power",        "#00ffff"),
-    "2": ("🧹  RAM & Cache Cleaner",  "#ff88ff"),
-    "3": ("💾  Disk Utilities",        "#ffff00"),
-    "4": ("⚙️  Process Manager",      "#00ff88"),
-    "5": ("📊  System Monitor",        "#ff8800"),
-    "6": ("🌐  Network Tools",         "#4488ff"),
-    "7": ("🗑️  Junk File Cleaner",     "#ff4444"),
-    "8": ("🔋  Battery & Power",       "#88ffff"),
-    "9": ("ℹ️  System Info",           "#ffffff"),
-    "a": ("🌀  AFK Mode",              "#cc88ff"),
-    "0": ("🚪  Exit",                  "#666666"),
+    "1": ("⏱  Timer & Power",       "#00ffff"),
+    "2": ("🧹  RAM & Cache Cleaner", "#ff88ff"),
+    "3": ("💾  Disk Utilities",       "#ffff00"),
+    "4": ("⚙️  Process Manager",     "#00ff88"),
+    "5": ("📊  System Monitor",       "#ff8800"),
+    "6": ("🌐  Network Tools",        "#4488ff"),
+    "7": ("🗑️  Junk File Cleaner",    "#ff4444"),
+    "8": ("🔋  Battery & Power",      "#88ffff"),
+    "9": ("ℹ️  System Info",          "#ffffff"),
+    "a": ("🌀  AFK Mode",             "#cc88ff"),
+    "0": ("🚪  Exit",                 "#666666"),
 }
 
-# ═══════════════════════════════════════════════════════════════
-#  RENDER HELPERS
-# ═══════════════════════════════════════════════════════════════
 
 def render_bar(val, total, width=40, color="#00ffff"):
     ratio  = min(val / total, 1.0) if total else 0
     filled = round(ratio * width)
     t = Text()
-    t.append("█" * filled,            style=f"bold {color}")
-    t.append("░" * (width - filled),  style="color(238)")
-    t.append(f"  {ratio*100:5.1f}%",  style="bold white")
+    t.append("█" * filled,           style=f"bold {color}")
+    t.append("░" * (width - filled), style="color(238)")
+    t.append(f"  {ratio*100:5.1f}%", style="bold white")
     return t
 
 def render_vu(level: int, width: int = 52) -> Text:
@@ -848,10 +726,10 @@ def render_vu(level: int, width: int = 52) -> Text:
     t.append("░" * (width - filled), style="color(238)")
     return t
 
-def logo_panel(color: str, subtitle: str = "V4.0 CROSS-PLATFORM") -> Panel:
+def logo_panel(color: str, subtitle: str = "V4.0") -> Panel:
     is_root = PlatformAPI.is_admin()
     priv_tag = (
-        "[bold #ff4444] ★ ROOT [/]" if is_root and not _IS_WIN else
+        "[bold #ff4444] ★ ROOT [/]"  if is_root and not _IS_WIN else
         "[bold #ff4444] ★ ADMIN [/]" if is_root else
         "[dim] USER [/]"
     )
@@ -889,9 +767,6 @@ def result_ok(msg):   console.print(f"   [bold #00ff88]✓[/]  {msg}")
 def result_fail(msg): console.print(f"   [bold #ff4444]✗[/]  {msg}")
 def result_warn(msg): console.print(f"   [bold #ffcc00]![/]  {msg}")
 
-# ═══════════════════════════════════════════════════════════════
-#  MAIN MENU
-# ═══════════════════════════════════════════════════════════════
 
 def main_menu() -> str:
     clr()
@@ -906,8 +781,7 @@ def main_menu() -> str:
 
     cols = Table.grid(padding=(0, 6))
     cols.add_column(); cols.add_column()
-    cols.add_row(make_menu_table(left_items, color),
-                 make_menu_table(right_items, color))
+    cols.add_row(make_menu_table(left_items, color), make_menu_table(right_items, color))
     console.print(Align.center(cols))
 
     console.print()
@@ -923,8 +797,8 @@ def main_menu() -> str:
         stats.add_column(style="color(240)")
         stats.add_column()
         stats.add_row(
-            "CPU",  render_bar(cpu,       100,        14, "#00ff88"),
-            "RAM",  render_bar(mem.used,  mem.total,  14, "#ff88ff"),
+            "CPU",  render_bar(cpu,      100,       14, "#00ff88"),
+            "RAM",  render_bar(mem.used, mem.total, 14, "#ff88ff"),
             "TIME", Text(datetime.now().strftime("%H:%M:%S"), style="bold #00ffff"),
         )
         console.print(Align.center(stats))
@@ -937,9 +811,6 @@ def main_menu() -> str:
         show_choices=False,
     )
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 1: TIMER & POWER
-# ═══════════════════════════════════════════════════════════════
 
 def build_timer_screen(timer, total, action, tick):
     color  = DISCO[tick % len(DISCO)]
@@ -957,13 +828,12 @@ def build_timer_screen(timer, total, action, tick):
     meta.add_row("clock",    datetime.now().strftime("%H:%M:%S"))
     meta.add_row("date",     datetime.now().strftime("%Y-%m-%d"))
 
-    clock  = Align.center(Text(f"{hh:02d}:{mm:02d}:{ss:02d}",
-                                style=f"bold {color}", justify="center"))
+    clock  = Align.center(Text(f"{hh:02d}:{mm:02d}:{ss:02d}", style=f"bold {color}", justify="center"))
     ratio  = (1 - (timer / total)) if total else 1
     filled = round(ratio * 52)
     prog_t = Text()
-    prog_t.append("█" * filled,      style=f"bold {color}")
-    prog_t.append("░" * (52-filled), style="color(238)")
+    prog_t.append("█" * filled,       style=f"bold {color}")
+    prog_t.append("░" * (52 - filled), style="color(238)")
     prog_t.append(f"  {ratio*100:5.1f}%", style="bold white")
 
     vu_row = Table.grid(padding=(0, 1))
@@ -977,7 +847,8 @@ def build_timer_screen(timer, total, action, tick):
     def gap(n=1):
         for _ in range(n): body.add_row(Text(""))
 
-    def sep(): body.add_row(Rule(style=dim, characters="─"))
+    def sep():
+        body.add_row(Rule(style=dim, characters="─"))
 
     gap(); body.add_row(Align.center(meta))
     gap(); sep(); gap()
@@ -985,9 +856,7 @@ def build_timer_screen(timer, total, action, tick):
     gap()
     body.add_row(Align.center(prog_t))
     gap()
-    body.add_row(Align.center(Text(
-        f"  remaining: {hh:02d}h {mm:02d}m {ss:02d}s", style=dim
-    )))
+    body.add_row(Align.center(Text(f"  remaining: {hh:02d}h {mm:02d}m {ss:02d}s", style=dim)))
     gap(); sep(); gap()
     body.add_row(Text("  ♫  spectrum", style=dim))
     gap()
@@ -1069,9 +938,6 @@ def module_timer():
     else:
         run_power_action(action)
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 2: RAM & CACHE CLEANER
-# ═══════════════════════════════════════════════════════════════
 
 def module_ram():
     section_header("RAM & CACHE CLEANER", "#ff88ff")
@@ -1094,7 +960,7 @@ def module_ram():
     console.print()
 
     opts = {
-        "1": f"Trim / Drop Process Memory   ({'WinAPI' if _IS_WIN else '/proc/vm  · root' if _IS_LINUX else 'purge'})",
+        "1": f"Trim / Drop Process Memory   ({'WinAPI' if _IS_WIN else '/proc/vm · root' if _IS_LINUX else 'purge'})",
         "2": f"Clear Page/Standby Cache      ({'WinAPI' if _IS_WIN else 'sync+drop_caches · root' if _IS_LINUX else 'purge'})",
         "3": f"Flush DNS Cache               ({'WinAPI' if _IS_WIN else 'resolvectl' if _IS_LINUX else 'dscacheutil'})",
         "4": f"Clear File / OS Cache         ({'BranchCache' if _IS_WIN else 'drop_caches · root' if _IS_LINUX else 'purge'})",
@@ -1116,10 +982,8 @@ def module_ram():
             t = prog.add_task("Trimming process memory...", total=None)
             count = PlatformAPI.trim_working_sets()
             prog.remove_task(t)
-            if count:
-                result_ok(f"Memory trim applied to {count} processes")
-            else:
-                result_fail("Memory trim failed — root/admin required")
+            if count: result_ok(f"Memory trim applied to {count} processes")
+            else:      result_fail("Memory trim failed — root/admin required")
 
         if choice in ("2", "5"):
             t = prog.add_task("Clearing page/standby cache...", total=None)
@@ -1153,15 +1017,11 @@ def module_ram():
                   f"{mem_after.percent:.1f}%[/]")
     pause()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 3: DISK UTILITIES
-# ═══════════════════════════════════════════════════════════════
 
 def module_disk():
     section_header("DISK UTILITIES", "#ffff00")
 
-    t = Table(box=box.ROUNDED, border_style="#ffff00",
-              header_style="bold #ffff00", show_lines=False)
+    t = Table(box=box.ROUNDED, border_style="#ffff00", header_style="bold #ffff00", show_lines=False)
     t.add_column("Mount/Drive", style="bold white",  min_width=14)
     t.add_column("FS",          style="color(240)",  min_width=6)
     t.add_column("Total",       style="white",       min_width=10)
@@ -1170,8 +1030,7 @@ def module_disk():
     for p in psutil.disk_partitions():
         try:
             u = psutil.disk_usage(p.mountpoint)
-            pct_color = ("#ff4444" if u.percent > 85
-                         else "#ffcc00" if u.percent > 65 else "#00ff88")
+            pct_color = "#ff4444" if u.percent > 85 else "#ffcc00" if u.percent > 65 else "#00ff88"
             t.add_row(
                 p.device if _IS_WIN else p.mountpoint,
                 p.fstype,
@@ -1184,27 +1043,20 @@ def module_disk():
     console.print(Align.center(t))
     console.print()
 
-    # Build OS-aware options
-    opt1_label = ("Optimize / Defrag" if _IS_WIN
-                  else "Trim SSDs (fstrim -av)" if _IS_LINUX
-                  else "Disk Utility info (macOS)")
-    opt2_label = ("Check Disk Health  (WMI)" if _IS_WIN
-                  else "Check Disk Health  (smartctl/lsblk)" if _IS_LINUX
-                  else "Verify Volume      (diskutil)")
-    opt3_label = ("System File Checker  (sfc · Admin)" if _IS_WIN
-                  else "Kernel error log     (dmesg grep)" if _IS_LINUX
-                  else "Verify Volume        (diskutil)")
-    opt4_label = ("Schedule Chkdsk Boot Scan  (Admin)" if _IS_WIN
-                  else "Schedule fsck on next boot" if _IS_LINUX
-                  else "Repair Volume (diskutil)")
+    opt1_label = ("Optimize / Defrag"          if _IS_WIN   else
+                  "Trim SSDs (fstrim -av)"     if _IS_LINUX else
+                  "Disk Utility info (macOS)")
+    opt2_label = ("Check Disk Health  (WMI)"          if _IS_WIN   else
+                  "Check Disk Health  (smartctl/lsblk)" if _IS_LINUX else
+                  "Verify Volume      (diskutil)")
+    opt3_label = ("System File Checker  (sfc · Admin)" if _IS_WIN   else
+                  "Kernel error log     (dmesg grep)"   if _IS_LINUX else
+                  "Verify Volume        (diskutil)")
+    opt4_label = ("Schedule Chkdsk Boot Scan  (Admin)" if _IS_WIN   else
+                  "Schedule fsck on next boot"          if _IS_LINUX else
+                  "Repair Volume (diskutil)")
 
-    opts = {
-        "1": opt1_label,
-        "2": opt2_label,
-        "3": opt3_label,
-        "4": opt4_label,
-        "0": "Back",
-    }
+    opts = {"1": opt1_label, "2": opt2_label, "3": opt3_label, "4": opt4_label, "0": "Back"}
     console.print(Align.center(make_menu_table(opts, "#ffff00")))
     choice = Prompt.ask("\n   [#ffff00]>[/]", choices=list(opts.keys()), show_choices=False)
 
@@ -1247,9 +1099,6 @@ def module_disk():
     if choice != "0":
         pause()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 4: PROCESS MANAGER
-# ═══════════════════════════════════════════════════════════════
 
 def module_process():
     section_header("PROCESS MANAGER", "#00ff88")
@@ -1267,17 +1116,14 @@ def module_process():
     if choice in ("1", "2"):
         key   = "cpu_percent" if choice == "1" else "memory_percent"
         procs = []
-        for p in psutil.process_iter(
-            ['pid', 'name', 'cpu_percent', 'memory_percent', 'status', 'username']
-        ):
+        for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status', 'username']):
             try:
                 procs.append(p.info)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         procs = sorted(procs, key=lambda x: x.get(key) or 0, reverse=True)[:20]
 
-        t = Table(header_style="bold #00ff88", box=box.ROUNDED,
-                  border_style="color(238)", show_lines=False)
+        t = Table(header_style="bold #00ff88", box=box.ROUNDED, border_style="color(238)", show_lines=False)
         t.add_column("PID",    style="color(240)", min_width=7,  justify="right")
         t.add_column("Name",   style="bold white", min_width=28)
         t.add_column("CPU%",   style="#ff8800",    min_width=8,  justify="right")
@@ -1335,9 +1181,6 @@ def module_process():
             console.print(Align.center(t))
         pause()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 5: LIVE SYSTEM MONITOR
-# ═══════════════════════════════════════════════════════════════
 
 def module_monitor():
     def build_monitor(tick):
@@ -1395,8 +1238,7 @@ def module_monitor():
         body.add_row(logo_panel(color, f"LIVE MONITOR  {datetime.now().strftime('%H:%M:%S')}"))
         body.add_row(top_row)
         body.add_row(io_panel)
-        body.add_row(Panel(Text("ctrl+c  →  return to menu",
-                                style="color(240)", justify="center"),
+        body.add_row(Panel(Text("ctrl+c  →  return to menu", style="color(240)", justify="center"),
                            border_style="color(238)", box=box.SIMPLE))
         return body
 
@@ -1426,19 +1268,16 @@ def module_monitor():
     finally:
         _stop.set()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 6: NETWORK TOOLS
-# ═══════════════════════════════════════════════════════════════
 
 def module_network():
     section_header("NETWORK TOOLS", "#4488ff")
 
-    reset_label = ("Network Stack Reset  (Admin · Reboot)" if _IS_WIN
-                   else "Restart Network      (NetworkManager · root)" if _IS_LINUX
-                   else "Flush DNS + mDNS     (macOS)")
-    ip_label    = ("IP Configuration     (ipconfig /all)" if _IS_WIN
-                   else "IP Configuration     (ip addr / ifconfig)" if _IS_LINUX
-                   else "IP Configuration     (ifconfig / ip)")
+    reset_label = ("Network Stack Reset  (Admin · Reboot)"    if _IS_WIN   else
+                   "Restart Network      (NetworkManager · root)" if _IS_LINUX else
+                   "Flush DNS + mDNS     (macOS)")
+    ip_label    = ("IP Configuration     (ipconfig /all)"     if _IS_WIN   else
+                   "IP Configuration     (ip addr / ifconfig)" if _IS_LINUX else
+                   "IP Configuration     (ifconfig / ip)")
 
     opts = {
         "1": "Ping Host",
@@ -1498,19 +1337,16 @@ def module_network():
     if choice != "0":
         pause()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 7: JUNK FILE CLEANER
-# ═══════════════════════════════════════════════════════════════
 
 def module_junk():
     section_header("JUNK FILE CLEANER", "#ff4444")
 
     targets = PlatformAPI.junk_targets()
     scan_table = Table(header_style="bold #ff4444", box=box.ROUNDED, border_style="color(238)")
-    scan_table.add_column("Folder",  style="white",     min_width=20)
-    scan_table.add_column("Path",    style="color(240)",min_width=36)
-    scan_table.add_column("Size",    style="#ffcc00",   min_width=10)
-    scan_table.add_column("Files",   style="color(240)",min_width=8)
+    scan_table.add_column("Folder",  style="white",      min_width=20)
+    scan_table.add_column("Path",    style="color(240)", min_width=36)
+    scan_table.add_column("Size",    style="#ffcc00",    min_width=10)
+    scan_table.add_column("Files",   style="color(240)", min_width=8)
 
     for path, label in targets:
         if not path or not os.path.exists(path):
@@ -1534,9 +1370,9 @@ def module_junk():
 
     cleanup_label = ("Clean pkg cache  (apt/pacman/dnf/brew)" if _IS_LINUX or _IS_MAC
                      else "Run Disk Cleanup  (cleanmgr)")
-    trash_label   = ("Empty Trash  (~/.local/share/Trash)" if _IS_LINUX
-                     else "Empty Trash  (~/.Trash)" if _IS_MAC
-                     else "Empty Recycle Bin  (WinAPI)")
+    trash_label   = ("Empty Trash  (~/.local/share/Trash)" if _IS_LINUX else
+                     "Empty Trash  (~/.Trash)"             if _IS_MAC   else
+                     "Empty Recycle Bin  (WinAPI)")
 
     opts = {
         "1": "Clean All Junk Folders  (listed above)",
@@ -1573,7 +1409,7 @@ def module_junk():
 
     elif choice == "3":
         if _IS_LINUX or _IS_MAC:
-            if not PlatformAPI.is_admin() and (_IS_LINUX):
+            if not PlatformAPI.is_admin() and _IS_LINUX:
                 result_warn("Some package caches may need root — attempting anyway")
             ok, msg = PlatformAPI.clean_pkg_cache()
             if ok: result_ok(msg)
@@ -1586,22 +1422,18 @@ def module_junk():
     if choice != "0":
         pause()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 8: BATTERY & POWER
-# ═══════════════════════════════════════════════════════════════
 
 def module_battery():
     section_header("BATTERY & POWER", "#88ffff")
 
     bat = PlatformAPI.battery_info()
     if bat.get("available"):
-        pct       = bat["percent"]
-        plugged   = bat["plugged"]
-        secsleft  = bat.get("secsleft")
+        pct      = bat["percent"]
+        plugged  = bat["plugged"]
+        secsleft = bat.get("secsleft")
         bar_color = "#00ff88" if pct > 50 else "#ffcc00" if pct > 20 else "#ff4444"
         status_text = (
-            "[bold #00ff88]⚡ PLUGGED IN[/]"
-            if plugged else
+            "[bold #00ff88]⚡ PLUGGED IN[/]" if plugged else
             "[bold #ffcc00]🔋 ON BATTERY[/]"
         )
         bt = Table.grid(padding=(0, 3))
@@ -1613,16 +1445,13 @@ def module_battery():
         if secsleft and not plugged:
             h, r = divmod(secsleft, 3600); m = r // 60
             bt.add_row("Remaining", Text(f"{h}h {m}m", style="bold white"))
-        console.print(Align.center(Panel(
-            bt, border_style="#88ffff", box=box.ROUNDED,
-            title="[bold #88ffff]battery status[/]"
-        )))
+        console.print(Align.center(Panel(bt, border_style="#88ffff", box=box.ROUNDED,
+                                         title="[bold #88ffff]battery status[/]")))
     else:
         result_warn("No battery detected (desktop system)")
 
     console.print()
 
-    # Power plans — labels adapt per OS
     if _IS_WIN:
         plans = {"1": "High Performance", "2": "Balanced", "3": "Power Saver"}
     elif _IS_LINUX:
@@ -1645,9 +1474,6 @@ def module_battery():
         else:   result_fail(msg)
         pause()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE 9: SYSTEM INFO
-# ═══════════════════════════════════════════════════════════════
 
 def module_sysinfo():
     section_header("SYSTEM INFORMATION", "#ffffff")
@@ -1673,7 +1499,6 @@ def module_sysinfo():
     t.add_row("Privileged",
               "[bold #00ff88]Yes[/]" if PlatformAPI.is_admin() else "[bold #ff4444]No[/]")
 
-    # Extra platform-specific fields
     for k, v in PlatformAPI.get_extra_info().items():
         t.add_row(k, str(v))
 
@@ -1688,15 +1513,13 @@ def module_sysinfo():
         t.add_row("CPU Cores",
                   f"{psutil.cpu_count(logical=False)} physical / {psutil.cpu_count()} logical")
         if freq:
-            t.add_row("CPU Freq",  f"{freq.current:.0f} MHz (max {freq.max:.0f} MHz)")
+            t.add_row("CPU Freq", f"{freq.current:.0f} MHz (max {freq.max:.0f} MHz)")
     t.add_row("Uptime", PlatformAPI.get_uptime())
 
-    console.print(Align.center(Panel(
-        t, border_style="#ffffff", box=box.ROUNDED, title="[bold]system info[/]"
-    )))
+    console.print(Align.center(Panel(t, border_style="#ffffff", box=box.ROUNDED,
+                                      title="[bold]system info[/]")))
     console.print()
 
-    # Export option
     if _IS_WIN:
         export_label = "Export Report  (msinfo32)"
     elif _IS_LINUX:
@@ -1726,14 +1549,13 @@ def module_sysinfo():
                     fh.write(f"Hostname: {hostname}\n")
                     fh.write(f"User: {username}\n")
                     fh.write(f"Uptime: {PlatformAPI.get_uptime()}\n\n")
-                    # Try inxi, lshw, uname fallbacks
                     for tool_cmd, label in [
-                        (["inxi", "-Fxz"],         "inxi -Fxz"),
-                        (["lshw", "-short"],        "lshw -short"),
-                        (["uname", "-a"],           "uname -a"),
-                        (["lscpu"],                 "lscpu"),
-                        (["free", "-h"],            "free -h"),
-                        (["df", "-h"],              "df -h"),
+                        (["inxi", "-Fxz"], "inxi -Fxz"),
+                        (["lshw", "-short"], "lshw -short"),
+                        (["uname", "-a"], "uname -a"),
+                        (["lscpu"], "lscpu"),
+                        (["free", "-h"], "free -h"),
+                        (["df", "-h"], "df -h"),
                     ]:
                         if shutil.which(tool_cmd[0]):
                             r = subprocess.run(tool_cmd, capture_output=True, text=True)
@@ -1743,9 +1565,6 @@ def module_sysinfo():
                 result_fail(str(e))
         pause()
 
-# ═══════════════════════════════════════════════════════════════
-#  MODULE A: AFK MODE  (pure visual · zero side-effects)
-# ═══════════════════════════════════════════════════════════════
 
 def _afk_scene_matrix(tick: int, w: int = 72) -> Text:
     CHARS = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789"
@@ -1772,7 +1591,7 @@ def _afk_scene_starfield(tick: int, w: int = 72, h: int = 14) -> Text:
     random.seed(42)
     stars = [(random.uniform(-1,1), random.uniform(-1,1), random.random()) for _ in range(80)]
     speed = 0.018
-    out_chars  = [[" "]       * w for _ in range(h)]
+    out_chars  = [[" "]        * w for _ in range(h)]
     out_styles = [["color(234)"] * w for _ in range(h)]
     for sx, sy, sz in stars:
         z = (sz - (tick * speed)) % 1.0
@@ -1835,7 +1654,8 @@ def _afk_scene_clock(tick: int) -> Text:
             elapsed = int(time.time() - psutil.boot_time())
             h,r = divmod(elapsed,3600); m=r//60; s=r%60
             result.append(f"  uptime  {h:02d}:{m:02d}:{s:02d}".center(52)+"\n", style="color(240)")
-        except Exception: pass
+        except Exception:
+            pass
     return result
 
 def _afk_scene_syswatch(tick: int) -> Text:
@@ -1849,7 +1669,7 @@ def _afk_scene_syswatch(tick: int) -> Text:
     mem     = psutil.virtual_memory()
     result.append("  cpu cores\n", style=f"bold {color}")
     for i, p in enumerate(cpu_all[:8]):
-        bc    = "#ff4444" if p > 85 else "#ffcc00" if p > 60 else "#00ff88"
+        bc     = "#ff4444" if p > 85 else "#ffcc00" if p > 60 else "#00ff88"
         filled = round(p / 100 * 40)
         result.append(f"    {i:>2}  ", style="color(240)")
         result.append("█"*filled + "░"*(40-filled), style=bc)
@@ -1948,8 +1768,7 @@ def module_afk():
         return root
 
     try:
-        with Live(build_frame(0, scene_idx, rotating),
-                  console=console, screen=True) as live:
+        with Live(build_frame(0, scene_idx, rotating), console=console, screen=True) as live:
             while True:
                 t0 = time.perf_counter()
                 live.update(build_frame(tick, scene_idx, rotating))
@@ -1963,9 +1782,6 @@ def module_afk():
     except KeyboardInterrupt:
         pass
 
-# ═══════════════════════════════════════════════════════════════
-#  MAIN LOOP
-# ═══════════════════════════════════════════════════════════════
 
 def main():
     if not PlatformAPI.is_admin():
